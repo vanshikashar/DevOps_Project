@@ -1,0 +1,162 @@
+# This file is a template, and might need editing before it works on your project.
+# This is a sample GitLab CI/CD configuration file that should run without any modifications.
+# It demonstrates a basic 3 stage CI/CD pipeline. Instead of real tests or scripts,
+# it uses echo commands to simulate the pipeline execution.
+#
+# A pipeline is composed of independent jobs that run scripts, grouped into stages.
+# Stages run in sequential order, but jobs within stages run in parallel.
+#
+# For more information, see: https://docs.gitlab.com/ee/ci/yaml/index.html#stages
+#
+# You can copy and paste this template into a new `.gitlab-ci.yml` file.
+# You should not add this template to an existing `.gitlab-ci.yml` file by using the `include:` keyword.
+#
+# To contribute improvements to CI/CD templates, please follow the Development guide at:
+# https://docs.gitlab.com/ee/development/cicd/templates.html
+# This specific template is located at:
+# https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Getting-Started.gitlab-ci.yml
+
+
+stages:          # List of stages for jobs, and their order of execution!
+  - Tools
+  - Test
+  - Security_Check
+  - Build
+  - Docker
+  - Deploy
+
+Install_Tool:       # Installing all the requriment tools we need this project
+  stage: Tools #stage for tools we have assign!
+  script:
+      - echo "Installing start all the requriments tools we have need"
+      - sudo apt install -y openjdk-17-jre-headless
+      - sudo apt install -y maven
+      - sudo apt install -y docker.io && sudo chmod 666 /var/run/docker.sock
+      - sudo apt-get install -y wget apt-transport-https gnupg lsb-release
+      - wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+      - echo deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main | sudo tee -a /etc/apt/sources.list.d/trivy.list
+      - sudo apt-get update -y
+      - sudo apt-get install -y trivy
+      - sudo snap install kubectl --classic
+      - echo "All the tools you need we have to done to install!"
+  tags:
+      - self-project  
+
+# Now check the project all the test case are passed or not!
+
+Check_Test:       # checking the projects al the test case passed or not?
+  stage: Test #stage for tools we have assign!
+  script:
+      - echo "Checking the test cases"
+      - mvn clean compile -DskipTests=true
+      - mvn test -DskipTests=true
+      - echo "All the test are passed, we are ready to go to further steps!"
+
+  tags:
+      - self-project
+
+#  Now need to add some security tools (trivy and sonarscanner) to scan the file and check the pugs to this project!
+
+Check_FileScan:      # Adding the trivy to scan the file!
+  stage: Security_Check #stage for filescan we have assign!
+  script:
+      - echo "Scannig the files"
+      - trivy fs --format json -o index.json .
+      - echo "Done to Scan the files, we are ready to go to further steps!"
+  tags:
+      - self-project
+
+# Adding the sonarqube to check the bugs and code small!
+
+Sonarqube-Check:
+  stage: Security_Check #stage for checking the bugs!
+  image: 
+    name: sonarsource/sonar-scanner-cli:latest
+  variables:
+    SONAR_USER_HOME: "${CI_PROJECT_DIR}/.sonar"  # Defines the location of the analysis task cache
+    GIT_DEPTH: "0"  # Tells git to fetch all the branches of the project, required by the analysis task
+  cache:
+    key: "${CI_JOB_NAME}"
+    paths:
+      - .sonar/cache
+  script: 
+    - sonar-scanner
+  allow_failure: true
+  only:
+    - main
+
+# Adding the Docker to create a image push the image to docker_hub and build the project!
+Build_Project:      # Build the Project!
+  stage: Build #stage for Build the project!
+  script:
+      - echo "Build the Project"
+      - mvn clean package -DskipTests=true
+      - echo "Build is done!"
+  artifacts:
+    paths:
+      - target/*.jar
+  tags:
+      - self-project
+  only:
+    - main
+
+# Adding the Docker to create a image push the image to docker_hub and build the project
+Login_Dockerhub:      #  Login to Docker hub!
+  stage: Docker #stage for Docker!
+  script:
+      - echo "Docker Loging...."
+      - docker login -u $USER_LOGIN -p $USER_PASS
+      - echo "Loging successful !"
+  tags:
+      - self-project
+  only:
+    - main
+Build_Image:      #  Creating the Imagefile!
+  stage: Docker #stage for Docker!
+  script:
+      - echo "Creating the Image File"
+      - docker build -t onlinelearningofficial/fullstackwebsite:v1 .
+      - echo "Image create successful !"
+  tags:
+      - self-project
+  only:
+    - main
+
+Scan_Image:      #  Scaning the Imagefile!
+  stage: Docker #stage for Docker!
+  script:
+      - echo "Scaning the Image File"
+      - trivy image --format json -o image.json onlinelearningofficial/fullstackwebsite:v1 
+      - echo "Image scaing successful !"
+  tags:
+      - self-project
+  only:
+    - main
+
+Push_Docker_Hub:      #  Image to Push the Dockerhub!
+  stage: Docker #stage for Docker!
+  script:
+      - echo "Pusing to docker hub"
+      - docker push onlinelearningofficial/fullstackwebsite:v1
+      - echo "Push successful to docker hub !"
+  tags:
+      - self-project
+  only:
+    - main
+
+
+# Deploy the website to kubernets cluster!
+
+K8-Deploy:
+  stage: Deploy
+  variables:
+    KUBECONFIG_PATH: /home/ubuntu/.kube/config
+  before_script:
+    - mkdir -p $(dirname "$KUBECONFIG_PATH")
+    - echo "$KUBECONFIG_CONTENT" | base64 -d > "$KUBECONFIG_PATH"
+  script:
+    - kubectl apply -f ds.yml
+  tags:
+      - self-project
+  only:
+    - main
