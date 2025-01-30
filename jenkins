@@ -1,0 +1,171 @@
+pipeline {
+    agent any
+    tools {
+        jdk 'myjdk'
+        maven 'mymaven'
+    }
+    environment {
+        SONAR_SCANNER_HOME = tool name: 'sonar-scanner', type: 'hudson.plugins.sonar.SonarRunnerInstallation'
+        IMAGE_NAME = 'vanshikasharmaa/multiproject'
+        TAG = "${env.BUILD_NUMBER}"
+    }
+
+    stages {
+        stage('Git Clone') {
+            steps {
+                git 'https://github.com/vanshikashar/DevOps_Project.git'
+            }
+        }
+
+        stage('Code Build') {
+            steps {
+                sh 'mvn compile -DskipTests=true'
+            }
+        }
+
+        stage('Code Test') {
+            steps {
+                sh 'mvn test -DskipTests=true'  // Don't skip tests in test stage!
+            }
+        }
+
+        stage('Code Package') {
+            steps {
+                sh 'mvn package -DskipTests=true'
+            }
+        }
+
+        stage('Scan the File') {
+            steps {
+                sh 'trivy fs --format json -o trivy_scan.json .'
+            }
+        }
+
+        stage('SonarQube Analysis') {
+            steps {
+                withSonarQubeEnv('sonar') {
+                    sh '$SONAR_SCANNER_HOME/bin/sonar-scanner -Dsonar.projectName=myproject  -Dsonar.projectKey=myproject -Dsonar.java.binaries=target'
+                }
+            }
+        }
+        stage('Sonarqube Quality Gate') {
+            steps {
+                timeout(time: 1, unit: 'HOURS') {
+                    waitForQualityGate abortPipeline: false
+                }
+            }
+        }
+        stage('Create the Docker Image') {
+            steps {
+                script{
+                    // This step should not normally be used in your script. Consult the inline help for details.
+                    withDockerRegistry(credentialsId: 'DockerHub') {
+                        // some block
+                        sh 'docker build -t ${IMAGE_NAME}:${TAG} .'
+                        }
+                }
+            }
+        }
+        stage('Scan the Image') {
+            steps {
+                sh 'trivy image --format json -o trivy_scan1.json ${IMAGE_NAME}:${TAG} '
+            }
+        }
+        stage('Push the Docker Image to docker hub') {
+            steps {
+                script{
+                    // This step should not normally be used in your script. Consult the inline help for details.
+                    withDockerRegistry(credentialsId: 'DockerHub') {
+                        // some block
+                        sh 'docker push ${IMAGE_NAME}:${TAG} '
+                        }
+                }
+            }
+        }
+        stage('Update Kubernetes Manifest') {
+            steps {
+                script {
+                sh """
+                sed -i "s|image: .*|image: ${IMAGE_NAME}:${TAG}|" ds.yml
+                """
+                    
+                }
+                
+            }
+            
+        }
+
+        stage('Git Update') {
+            steps {
+                script{
+                    withCredentials([usernamePassword(credentialsId: 'github', passwordVariable: 'PASS', usernameVariable: 'USER')]) {
+                        sh """
+                        git config --global user.email "vanshikapandit02911@gmail.com"
+                        git config --global user.name "vanshikashar"
+                        git remote set-url origin https://${USER}:${PASS}@github.com/vanshikashar/DevOps_Project.git
+                        git pull origin master
+                        git add ds.yml trivy_scan.json trivy_scan1.json
+                        git commit -m "Update image to ${IMAGE_NAME}:${TAG}" || echo "No changes to commit"
+                        git push origin master
+                        """
+                    }
+                }
+            }
+        }
+        stage('Check and Install Terraform') {
+            steps {
+                script {
+                    if (sh(script: 'which terraform || echo "not found"', returnStatus: true) != 0) {
+                        echo 'Terraform not found, installing...'
+                        sh 'sudo snap install terraform --classic'
+                    } else {
+                        echo 'Terraform is already installed.'
+                    }
+                }
+            }
+        }
+        stage('Check and Create Kubernetes Cluster') {
+            steps {
+                script {
+                    def clusterExists = sh(
+                        script: "kubectl config get-clusters | grep -w 'devopsshack' || echo 'not found'",
+                        returnStdout: true
+                    ).trim()
+                    
+                    if (clusterExists == 'not found') {
+                        echo 'Cluster devopsshack not found. Creating the cluster...'
+                        dir('/home/ubuntu/.jenkins/workspace/Multi/Cluster') {
+                            sh 'terraform init'
+                            sh 'terraform plan'
+                            sleep 20
+                            sh 'terraform apply --auto-approve'
+                            sleep 60
+                            sh 'aws eks --region us-west-2 update-kubeconfig --name devopsshack-cluster'
+                        }
+                    } else {
+                        echo 'Cluster devopsshack already exists.'
+                    }
+                }
+            }
+        }
+        stage('Deploy the application to EKS') {
+            steps {
+                withKubeConfig(caCertificate: '', clusterName: 'devopsshack-cluster', contextName: '', credentialsId: 'k8s', namespace: 'cred', restrictKubeConfigAccess: false, serverUrl: 'https://64821C6E218A64D4A11D70DEC793FFC6.gr7.us-west-2.eks.amazonaws.com') {
+                    sh 'kubectl apply -f ds.yml -n cred'
+                    sleep 10
+                }
+            }
+        }
+
+
+        stage('Verify the application to EKS') {
+            steps {
+                withKubeConfig(caCertificate: '', clusterName: 'devopsshack-cluster', contextName: '', credentialsId: 'k8s', namespace: 'cred', restrictKubeConfigAccess: false, serverUrl: 'https://64821C6E218A64D4A11D70DEC793FFC6.gr7.us-west-2.eks.amazonaws.com') {
+                    sh 'kubectl get pods -n cred'
+                    sh 'kubectl get svc -n cred'
+                    sleep 10
+                }
+            }
+        }
+    }
+}
