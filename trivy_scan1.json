@@ -1,7 +1,7 @@
 {
   "SchemaVersion": 2,
-  "CreatedAt": "2025-01-30T16:47:26.259739446Z",
-  "ArtifactName": "vanshikasharmaa/multiproject:31",
+  "CreatedAt": "2025-01-30T16:57:01.462295358Z",
+  "ArtifactName": "vanshikasharmaa/multiproject:32",
   "ArtifactType": "container_image",
   "Metadata": {
     "OS": {
@@ -24,7 +24,8 @@
       "vanshikasharmaa/multiproject:28",
       "vanshikasharmaa/multiproject:29",
       "vanshikasharmaa/multiproject:30",
-      "vanshikasharmaa/multiproject:31"
+      "vanshikasharmaa/multiproject:31",
+      "vanshikasharmaa/multiproject:32"
     ],
     "RepoDigests": [
       "vanshikasharmaa/multiproject@sha256:3b102083c1c207d5d644037a8eddb2aeffe83490a88d8853383d19133c0c9e70"
@@ -166,7 +167,7 @@
   },
   "Results": [
     {
-      "Target": "vanshikasharmaa/multiproject:31 (alpine 3.21.2)",
+      "Target": "vanshikasharmaa/multiproject:32 (alpine 3.21.2)",
       "Class": "os-pkgs",
       "Type": "alpine"
     },
