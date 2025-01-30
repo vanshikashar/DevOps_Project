@@ -16,7 +16,7 @@ spec:
         app: mysql
     spec:
       containers:
-      - image: vanshikasharmaa/multiproject:28
+      - image: vanshikasharmaa/multiproject:29
         name: mysql
         env:
         - name: MYSQL_ROOT_PASSWORD
@@ -62,7 +62,7 @@ spec:
     spec:
       containers:
       - name: bankapp
-        image: vanshikasharmaa/multiproject:28
+        image: vanshikasharmaa/multiproject:29
         ports:
         - containerPort: 8080
         env:
